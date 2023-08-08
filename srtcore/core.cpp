@@ -10427,20 +10427,6 @@ int srt::CUDT::processData(CUnit* in_unit)
     if (m_bPeerRexmitFlag && was_sent_in_order)
     {
         ++m_iConsecOrderedDelivery;
-        if (m_iConsecOrderedDelivery >= 50)
-        {
-            m_iConsecOrderedDelivery = 0;
-            if (m_iReorderTolerance > 0)
-            {
-                m_iReorderTolerance--;
-                enterCS(m_StatsLock);
-                m_stats.traceReorderDistance--;
-                leaveCS(m_StatsLock);
-                HLOGF(qrlog.Debug,
-                      "ORDERED DELIVERY of 50 packets in a row - decreasing tolerance to %d",
-                      m_iReorderTolerance);
-            }
-        }
     }
 
     return 0;
@@ -10501,7 +10487,7 @@ srt::CUDT::loss_seqs_t srt::CUDT::defaultPacketArrival(void* vself, CPacket& pkt
         }
     }
 
-    const int initial_loss_ttl = (self->m_bPeerRexmitFlag) ? self->m_iReorderTolerance : 0;
+    const int initial_loss_ttl = (self->m_bPeerRexmitFlag) ? self->m_iMaxReorderTolerance : 0;
 
     int seqdiff = CSeqNo::seqcmp(pkt.m_iSeqNo, self->m_iRcvCurrSeqNo);
 
@@ -10679,23 +10665,6 @@ breakbreak:;
         {
             ++m_iConsecEarlyDelivery; // otherwise, and if it arrived quite earlier, increase counter
             HLOGF(qrlog.Debug, "... arrived at TTL %d case %d", had_ttl, m_iConsecEarlyDelivery);
-
-            // After 10 consecutive
-            if (m_iConsecEarlyDelivery >= 10)
-            {
-                m_iConsecEarlyDelivery = 0;
-                if (m_iReorderTolerance > 0)
-                {
-                    m_iReorderTolerance--;
-                    enterCS(m_StatsLock);
-                    m_stats.traceReorderDistance--;
-                    leaveCS(m_StatsLock);
-                    HLOGF(qrlog.Debug,
-                          "... reached %d times - decreasing tolerance to %d",
-                          m_iConsecEarlyDelivery,
-                          m_iReorderTolerance);
-                }
-            }
         }
         // If hasn't increased tolerance, but the packet appeared at TTL less than 2, do nothing.
     }
@@ -11216,7 +11185,6 @@ int srt::CUDT::checkNAKTimer(const steady_clock::time_point& currtime)
         if (currtime <= m_tsNextNAKTime.load())
             return BECAUSE_NO_REASON; // wait for next NAK time
 
-        sendCtrl(UMSG_LOSSREPORT);
         debug_decision = BECAUSE_NAKREPORT;
     }
 
